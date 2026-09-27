@@ -9,15 +9,15 @@ Ships as a CLI and as an MCP server, so an AI agent can check a whole list in
 one tool call and claim the winner.
 
 ```
-$ uv run tgnamer.py --theme "telegram fork" --length 5-6 --want 3
+$ uv run tgnamer.py --check tgram tgweb gramv tgapp tgplx
 
-fragment:taken     tgram
-fragment:available tgweb
-invalid            tgapp        ← reserved by Telegram, looks free on t.me
+taken              tgram
+for_sale:100       tgweb        ← on Fragment, price in TON
+auction:2260       gramv
+invalid:reserved   tgapp        ← reserved by Telegram, looks free on t.me
 free               tgplx
-free               tgpull
 
-FREE: tgplx tgpull
+FREE: tgplx
 ```
 
 ## Why another checker
@@ -50,9 +50,14 @@ Environment:
 |---|---|
 | `ANTHROPIC_API_KEY` | candidate generation (skip it and pass `--check`) |
 | `TG_API_ID`, `TG_API_HASH` | from https://my.telegram.org/apps, enables the MTProto verdict |
-| `TG_SESSION` | optional Telethon `StringSession`; without it the first run logs in by phone and saves `tgnamer.session` |
+| `TG_SESSION` | Telethon `StringSession` printed by `--login` |
 
-Without `TG_API_ID` the tool still runs, but `free` is only a guess.
+Without `TG_API_ID` the tool still runs, but `free` is only a guess and it says so.
+
+```bash
+export TG_API_ID=... TG_API_HASH=...
+uv run tgnamer.py --login      # phone + code once, prints: export TG_SESSION=...
+```
 
 ## CLI
 
@@ -63,16 +68,27 @@ uv run tgnamer.py --theme "cyberpunk cat" --length 5-8 --count 40 --rounds 3 --w
 # check your own list, no AI
 uv run tgnamer.py --check durov tgapp tgplx
 
+# who am I, which channels can I use
+uv run tgnamer.py --whoami
+uv run tgnamer.py --channels
+
 # check on behalf of a channel (id, @username or exact title)
 uv run tgnamer.py --channel "My Channel" --check tgplx
 
-# set the channel's public link
+# set the public link: of a channel, or of the account when --channel is omitted
 uv run tgnamer.py --channel "My Channel" --claim tgplx
 ```
 
-Statuses: `free`, `taken`, `purchasable` (buyable on Fragment), `invalid`
-(reserved or malformed), `fragment:<status>` (on auction / for sale / sold),
-`error`.
+Statuses:
+
+| Status | Meaning |
+|---|---|
+| `free` | Telegram confirmed it can be set |
+| `taken` | someone has it |
+| `purchasable` | Telegram says it is buyable on Fragment |
+| `for_sale:<TON>` / `auction:<TON>` / `sold:<TON>` | Fragment listing with price |
+| `invalid:<reason>` | `too_short`, `too_long`, `bad_chars`, `starts_with_digit`, `bad_underscore` (checked locally) or `reserved` (Telegram) |
+| `error` | network failure on the HTTP layer |
 
 `--channel` uses `channels.checkUsername`. If the account already owns the
 maximum number of public channels Telegram refuses even to check, and tgnamer
@@ -88,10 +104,26 @@ claude mcp add tgnamer \
 
 Tools:
 
-- `check_usernames(names, channel?)` → `{name: status}` for the whole list in one call.
-- `claim_username(channel, name, confirm=false)` → sets the channel's username. Refuses unless `confirm=true`.
+- `check_usernames(names, channel?)` → up to 100 names per call. Returns `{"results": {name: status}, "pending": [...], "retry_after": seconds|null}`; if Telegram imposes a flood wait longer than the 60 s call budget, the rest comes back in `pending` for a later call. Results are cached for the server's lifetime.
+- `auth_status()` → which account the session belongs to, or what is missing.
+- `list_channels()` → channels you administer, to pick a `channel`.
+- `claim_username(name, channel?, confirm=false)` → sets the username on a channel, or on the account when `channel` is omitted. Refuses unless `confirm=true`.
 
-Any MCP client works; the config shape is `{"command": "uv", "args": ["run", "/path/to/tgnamer_mcp.py"], "env": {...}}`.
+Claude Desktop / Cursor / any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "tgnamer": {
+      "command": "uv",
+      "args": ["run", "/path/to/tgnamer_mcp.py"],
+      "env": {"TG_API_ID": "...", "TG_API_HASH": "...", "TG_SESSION": "..."}
+    }
+  }
+}
+```
+
+The agent is the generator: ask it for candidates and let it call `check_usernames` with the whole list. The CLI's Claude call exists for use without an agent.
 
 ## Notes
 
