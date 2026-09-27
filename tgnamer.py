@@ -27,6 +27,13 @@ import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
 UA = {"User-Agent": "Mozilla/5.0"}
+# names Telegram refused via checkUsername although t.me/fragment showed nothing; grows as verdicts come in
+RESERVED_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reserved.txt")
+try:
+    with open(RESERVED_FILE) as f:
+        RESERVED = {line.strip() for line in f if line.strip()}
+except OSError:
+    RESERVED = set()
 FRAGMENT_STATUS = {"tm-status-taken": "taken", "tm-status-avail": "for_sale", "tm-status-unavail": "sold"}
 
 
@@ -63,6 +70,8 @@ def status(name: str) -> str:
     name = name.lower().lstrip("@")
     if reason := validate(name):
         return f"invalid:{reason}"
+    if name in RESERVED:
+        return "invalid:reserved"
     code, body = _get(f"https://fragment.com/username/{name}")
     if code == 200 and f"<title>{name}" in body.lower():  # 302 -> homepage means not a collectible
         m = re.search(r'tm-section-header-status (tm-status-\w+)">([^<]*)', body)
@@ -227,7 +236,7 @@ def generate(theme: str, length: str, count: int, avoid: set[str]) -> list[str]:
         f"avoid random letter soup. Do not repeat: {', '.join(sorted(avoid)) or 'none'}."
     )
     r = anthropic.Anthropic().messages.parse(
-        model="claude-opus-5",
+        model=os.environ.get("GEN_MODEL", "claude-opus-5"),
         max_tokens=4000,
         messages=[{"role": "user", "content": prompt}],
         output_format=Ideas,

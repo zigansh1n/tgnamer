@@ -125,6 +125,43 @@ Claude Desktop / Cursor / any MCP client:
 
 The agent is the generator: ask it for candidates and let it call `check_usernames` with the whole list. The CLI's Claude call exists for use without an agent.
 
+## Public bot (no user session)
+
+`tgnamer_bot.py` is a Telegram bot anyone can message. Bots cannot call `checkUsername`
+(the API says "Only users can use this method"), so it runs the HTTP layer plus
+`reserved.txt` and words its answers honestly: *taken / for sale / sold / auction* are
+certain, *looks free* means "confirm in Settings → Username". No account of yours is
+involved, so nothing can get flood-limited or banned.
+
+```bash
+export BOT_TOKEN=...            # @BotFather
+export TG_API_ID=... TG_API_HASH=...   # transport only, from my.telegram.org/apps
+export ANTHROPIC_API_KEY=...    # optional: enables /gen
+uv run tgnamer_bot.py
+```
+
+Users send names (up to 20 per message, 100 per hour) or `/gen <theme> [5-7]`
+(5 per user per day, model via `GEN_MODEL`, default `claude-opus-5`).
+Footprint is ~60 MB RAM and idle CPU; the smallest VPS is enough. systemd unit:
+
+```ini
+[Unit]
+Description=tgnamer bot
+After=network-online.target
+
+[Service]
+WorkingDirectory=/opt/tgnamer
+EnvironmentFile=/opt/tgnamer/.env
+ExecStart=/usr/local/bin/uv run tgnamer_bot.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`reserved.txt` is the list of names Telegram rejected via `checkUsername` while t.me and
+Fragment showed nothing. Append to it whenever the CLI or MCP returns `invalid:reserved`.
+
 ## Notes
 
 - Telegram usernames are 5–32 characters; anything shorter exists only as a Fragment collectible.
